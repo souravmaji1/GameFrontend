@@ -1,0 +1,57 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap")
+  @tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #020128;
+  width: 100%;
+  margin: 0px;
+  /* overflow: hidden;
+    height: 100vh;
+    height: 100dvh; */
+}
+a {
+  text-decoration: none !important;
+}
+.hero-box {
+  background-image: url(../src/assets//images/hero-box-img.svg);
+  background-size: 100%;
+  background-position: 100% 35%;
+}
+.tooltip-info {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  padding: 1px 8px;
+}
+.tierInfo {
+  background: #020127de;
+  border-top-left-radius: 50px;
+  border-top-right-radius: 50px;
+}
+.upBtn {
+  border-top-right-radius: 22px;
+  border-bottom-right-radius: 22px;
+}
+.downBtn {
+  border-top-left-radius: 22px;
+  border-bottom-left-radius: 22px;
+  border-bottom-right-radius: 22px;
+}
+.earned-profit {
+  background-image: url(../src/assets//images/EarnedProfit.svg);
+  background-size: 90%;
+  background-position: 100% 35%;
+}
+.loss-profit {
+  background-image: url(../src/assets//images/LossProfiteBg.svg);
+  background-size: 90%;
+  background-position: 100% 35%;
+}
+.css-1u9des2-indicatorSeparator {
+  display: none;
+}
+#my-tooltip {
+  background-color: #040a32e8 !important;
+}

@@ -1,0 +1,461 @@
+  const chartContainerRef = useRef(null);
+  const chartRef = useRef(null);
+  const candleSeriesRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState(null);
+  const [userTier, setUserTier] = useState(1);
+  const [lives, setLives] = useState(0);
+  const [points, setPoints] = useState(0);
+  const [guessResult, setGuessResult] = useState(null);
+  const [hasGuessed, setHasGuessed] = useState(false);
+  const [consecutiveCorrectGuesses, setConsecutiveCorrectGuesses] = useState(0);
+  const [currentDateTime, setCurrentDateTime] = useState(new Date());
+  const {user} = useTelegram();
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentDateTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatTime = (date) => {
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+    const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+    return `${formattedHours}:${formattedMinutes} ${ampm}`;
+  };
+
+  const formatDate = (date) => {
+    const options = { month: 'long', day: 'numeric' };
+    return date.toLocaleString('en-US', options);
+  };
+
+  const formattedTime = formatTime(currentDateTime);
+  const formattedDate = formatDate(currentDateTime);
+
+ 
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+
+    const chart = createChart(chartContainerRef.current, {
+      width: chartContainerRef.current.offsetWidth,
+      height: chartContainerRef.current.offsetHeight,
+      layout: {
+        background: { color: '#171B26' },
+        textColor: '#8A8D97',
+      },
+      grid: {
+        vertLines: {
+          color: '#636363',
+          style: 0,
+          visible: true,
+        },
+        horzLines: {
+          color: '#636363',
+          style: 0,
+          visible: true,
+        }
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: '#485158',
+      },
+      priceScale: {
+        borderColor: '#485158',
+      },
+    });
+
+    const candleSeries = chart.addCandlestickSeries();
+    candleSeriesRef.current = candleSeries;
+    chartRef.current = chart;
+
+    const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_1m');
+
+    ws.onmessage = (event) => {
+      setIsLoading(false);
+      const message = JSON.parse(event.data);
+      const candle = message.k;
+
+      const newCandle = {
+        time: candle.t / 1000,
+        open: parseFloat(candle.o),
+        high: parseFloat(candle.h),
+        low: parseFloat(candle.l),
+        close: parseFloat(candle.c),
+      };
+
+      if (candleSeriesRef.current) {
+        candleSeriesRef.current.update(newCandle);
+        candleSeriesRef.current.lastPriceData = newCandle;
+      }
+    };
+
+    return () => {
+      if (ws) ws.close();
+      if (chartRef.current) chartRef.current.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchSession = async () => {
+      
+    
+          const { id } = user;
+
+          const { data: userData, error: fetchError } = await supabase
+            .from("userdata")
+            .select("*")
+            .eq("userid", id)
+            .single();
+
+          if (fetchError) {
+            console.error("Error fetching user data:", fetchError);
+          } else {
+            const { tier, lives, points, consecutiveCorrectGuesses } = userData;
+            setUserTier(tier);
+            setLives(lives);
+            setPoints(points);
+            setConsecutiveCorrectGuesses(consecutiveCorrectGuesses);
+          }
+        };
+      
+    
+
+    fetchSession();
+  }, []);
+
+  const handleGuess = async (isUp) => {
+
+    const { id } = user;
+
+    const { data: userData, error: fetchError } = await supabase
+      .from("userdata")
+      .select("*")
+      .eq("userid", id)
+      .single();
+
+    if (fetchError) {
+      console.error("Error fetching user data:", fetchError);
+      return;
+    }
+
+  
+    
+    const { tier, lives, points, consecutiveCorrectGuesses, currentPredictionIntervalStart } = userData;
+
+    if (lives <= 0) {
+      console.error("User don't have lives");
+      return;
+    }
+
+    // Determine if the guess is correct based on the last candlestick data
+    const isCorrect =
+      (isUp && candleSeriesRef.current.lastPriceData.close > candleSeriesRef.current.lastPriceData.open) ||
+      (!isUp && candleSeriesRef.current.lastPriceData.close < candleSeriesRef.current.lastPriceData.open);
+
+    let newTier = tier;
+    let newLives = lives;
+   // let newPoints = points;
+    let newConsecutiveCorrectGuesses = isCorrect ? consecutiveCorrectGuesses + 1 : 0;
+    let newTimeInterval = 0;
+
+    let pointsToAward = 0; // Initialize pointsToAward
+    let newTime = currentPredictionIntervalStart;
+
+     // Determine the tier level at which the guess was made
+     const guessedTier = isCorrect ? tier : tier > 1 ? tier - 1 : 1;
+
+     // Calculate points based on the guessed tier
+     pointsToAward = guessedTier;
+  
+  //  const currentTime = new Date().getTime();
+  //  const timeSinceLastGuess = lastGuessTime ? currentTime - lastGuessTime : 0;
+
+    console.log(newConsecutiveCorrectGuesses)
+  
+    if (isCorrect) {
+      // Increment the tier based on the tier progression rules and time intervals
+      
+      switch (tier) {
+        case 1:
+       //   newPoints += 1;
+          newLives--;
+          if (newConsecutiveCorrectGuesses === 1) {
+            newTier = 2;
+            newLives = 2;
+            newTime = new Date().getTime();
+            newConsecutiveCorrectGuesses = 0;
+          }
+          break;
+        case 2:
+       //   newPoints += 2;
+         newLives--;
+          if (newConsecutiveCorrectGuesses === 2 ) {
+         //   newTier = 3;
+          //  newLives = 3;
+           // newConsecutiveCorrectGuesses = 0;
+          }
+          break;
+        case 3:
+       //   newPoints += 3;
+       newLives--;
+          if (newConsecutiveCorrectGuesses === 3 ) {
+          //  newTier = 4;
+          //  newLives = 4;
+          //  newConsecutiveCorrectGuesses = 0;
+          }
+          break;
+        case 4:
+        //  newPoints += 4;
+        newLives--;
+          if (newConsecutiveCorrectGuesses === 4 ) {
+          //  newTier = 5;
+           // newLives = 5;
+          //  newConsecutiveCorrectGuesses = 0;
+          }
+          break;
+        case 5:
+        //  newPoints += 5;
+        newLives--;
+          if (newConsecutiveCorrectGuesses === 5 ) {
+        //    newTier = 6;
+         //   newLives = 6;
+          //  newConsecutiveCorrectGuesses = 0;
+          }
+          break;
+        case 6:
+       //   newPoints += 6;
+       newLives--;
+          if (newConsecutiveCorrectGuesses === 6 ) {
+         //   newTier = 7;
+         //   newLives = 7;
+          //  newConsecutiveCorrectGuesses = 0;
+          }
+          break;
+        case 7:
+       //   newPoints += 7;
+       newLives--;
+          if (newConsecutiveCorrectGuesses === 7 ) {
+        //    newTier = 8;
+          //  newLives = 8;
+          //  newConsecutiveCorrectGuesses = 0;
+          }
+          break;
+        case 8:
+       //   newPoints += 8;
+       newLives--;
+          if (newConsecutiveCorrectGuesses === 8 ) {
+         //   newTier = 9;
+          //  newLives = 9;
+          //  newConsecutiveCorrectGuesses = 0;
+          } else {
+            newTimeInterval++;
+          }
+          break;
+        case 9:
+      //    newPoints += 9;
+      newLives--;
+          if (newConsecutiveCorrectGuesses === 9 ) {
+        //    newTier = 10;
+         //   newLives = 10;
+        //    newConsecutiveCorrectGuesses = 0;
+          } else {
+            newTimeInterval++;
+          }
+          break;
+        case 10:
+       //   newPoints += 10;
+       newLives--;
+          if (newConsecutiveCorrectGuesses === 10 ) {
+            // Stay at Tier 10
+          } else {
+            newTier = 9;
+            newTimeInterval = 0;
+          }
+          break;
+        default:
+          break;
+      }
+   //   newPoints += tier;
+    } else {
+      // Decrement the tier if the user guessed incorrectly
+      if (tier > 1) {
+        newTier--;
+      }
+      newLives--;
+      newTimeInterval = 0; // Reset the time interval counter
+      newConsecutiveCorrectGuesses = 0; // Reset the consecutive correct guesses counter
+    }
+
+    const newPoints = isCorrect ? points + pointsToAward : points;
+  
+    setGuessResult(isCorrect ? 'Correct' : 'Incorrect');
+    setHasGuessed(true);
+    // Update the user data in the database
+    const { error: updateError } = await supabase
+      .from("userdata")
+      .update({ tier: newTier, lives: newLives, points: newPoints, consecutiveCorrectGuesses: newConsecutiveCorrectGuesses, timeInterval: newTimeInterval, lastGuessTime: new Date().getTime(), updated_at: newLives < lives ? new Date().toISOString() : userData.updated_at, currentPredictionIntervalStart: newTime })
+      .eq("userid", id);
+
+    if (updateError) {
+      console.error("Error updating user data:", updateError);
+    } else {
+      setUserTier(newTier);
+      setLives(newLives);
+      setPoints(newPoints);
+    }
+  };
+
+
+  const getCorrectGuessesRequiredForNextTier = (tier) => {
+    switch (tier) {
+      case 1:
+        return 1;
+      case 2:
+        return 2;
+      case 3:
+        return 3;
+      case 4:
+        return 4;
+      case 5:
+        return 5;
+      case 6:
+        return 6;
+      case 7:
+        return 7;
+      case 8:
+        return 8;
+      case 9:
+        return 9;
+      case 10:
+        return 10;
+      default:
+        return 0;
+    }
+  };
+
+ <>
+      <div className="chartBar bg-[#1E222D] rounded-t-[20px] h-auto">
+       
+
+        {!hasGuessed && (
+          <>
+           <TopNavigation />
+      <div id="crypto-chart" ref={chartContainerRef} className="mt-8" style={{ width: '100%', height: '350px' }}>
+        {isLoading ? <Loader /> : null}
+      </div> 
+
+        <ChartNavigation />
+        
+       
+       
+        <button className="text-center bg-[#0F2249] mx-14 pt-4 pb-2 mt-3 rounded-[22px]"  style={{width:'-webkit-fill-available',border:'none'}} onClick={() => handleGuess(false)}  >
+      
+       
+          <span className="text-white text-[12px] font-bold font-inter">
+            Your Guess
+          </span>
+          <h2 className="text-white text-[24px] font-bold font-inter">
+            Down <span>&darr;</span>
+          </h2>
+         
+        </button>
+        <p className="text-white text-center text-[15px] font-inter pb-5">
+          {getCorrectGuessesRequiredForNextTier(userTier) - consecutiveCorrectGuesses} correct guesses until <span className="font-bold">Tier {userTier + 1}!</span>
+        </p>
+        </>
+        )}
+
+</div>
+
+{guessResult && (
+          guessResult === 'Correct' ? (
+            <>
+            <TopNavigation />
+            <div  className="earned-profit bg-fixed bg-no-repeat">
+             <HeaderInfo />
+             <div className="tierInfo mt-6">
+      <p className="text-center text-white font-inter pt-4 text-[16px] ">
+        Your last guess! {guessResult}
+      </p>
+
+      <div className="bidLimit text-center py-3 relative">
+        <div className="flex">
+          <span className="rounded-full bg-[#D9D9D9] p-2 text-[24px] font-bold font-inter absolute right-[40%] top-[0px] z-10">
+            +{points}
+          </span>
+          <span className="bg-[#0FCEA0] p-2 text-[24px] text-white pl-8 font-bold font-inter absolute right-[22%] top-[0px] rounded-[14px] pr-3">
+            Point
+          </span>
+        </div>
+        <img src={ProfitChecked} className="w-[96px]" alt="" />
+        <h2 className="text-white font-inter font-bold text-[24px]">
+        {candleSeriesRef.current.lastPriceData.open.toFixed(2)} USD &gt; <span className="text-[#6FCD35]"> {candleSeriesRef.current.lastPriceData.close.toFixed(2)} USD</span>
+        </h2>
+      </div>
+
+      <p className="text-white text-center text-[16px] font-bold font-inter">
+        Price at <span className="text-[#ff9b63]">{formattedTime}</span> PM on{" "}
+        <span className="text-[#ff9b63]">{formattedDate}</span>
+      </p>
+
+      <div className="text-center bg-[#134292] mx-14 pt-4 pb-2 mt-3 rounded-[22px]">
+        <h2 className="text-white text-[24px] font-bold font-inter">Next</h2>
+      </div>
+      <p className="text-white text-center text-[16px] font-light font-inter">
+      {getCorrectGuessesRequiredForNextTier(userTier) - consecutiveCorrectGuesses} correct guesses until <span className="font-bold">Tier {userTier + 1}!</span>
+      </p>
+    </div>
+            </div>
+           
+    </>
+          ) : (
+            // Render this section if the guess is incorrect
+            <>
+            <TopNavigation />
+            <div className="loss-profit bg-fixed bg-no-repeat">
+              <HeaderInfo />
+              <div className="tierInfo mt-6">
+      <p className="text-center text-white font-inter pt-4 text-[16px] ">
+        Your last guess! {guessResult}
+      </p>
+
+      <div className="bidLimit text-center py-3 relative">
+        <div className="flex">
+          <span className="rounded-full bg-[#D9D9D9] py-2 px-3 text-[24px] font-bold font-inter absolute right-[40%] top-[0px] z-10">
+            -1
+          </span>
+          <span className="bg-[#F64949] p-2 text-[24px] text-white pl-8 font-bold font-inter absolute right-[22%] top-[0px] rounded-[14px] pr-3">
+            Point
+          </span>
+        </div>
+        <img src={LossUSDIMG} className="w-[96px]" alt="" />
+        <h2 className="text-white font-inter font-bold text-[24px]">
+        {candleSeriesRef.current.lastPriceData.open.toFixed(2)} &gt; <span className="text-[#6FCD35]"> {candleSeriesRef.current.lastPriceData.close.toFixed(2)} USD</span>
+        </h2>
+      </div>
+
+      <p className="text-white text-center text-[16px] font-bold font-inter">
+        Price at <span className="text-[#ff9b63]">{formattedTime}</span> PM on{" "}
+        <span className="text-[#ff9b63]">{formattedDate}</span>
+      </p>
+
+      <div className="text-center bg-[#134292] mx-14 pt-4 pb-2 mt-3 rounded-[22px]">
+        <h2 className="text-white text-[24px] font-bold font-inter">Next</h2>
+      </div>
+      <p className="text-white text-center text-[16px] font-light font-inter">
+      {getCorrectGuessesRequiredForNextTier(userTier) - consecutiveCorrectGuesses} correct guesses until <span className="font-bold">Tier {userTier + 1}!</span>
+      </p>
+    </div>
+            </div>
+           
+    </>
+          )
+        )}
+
+    </>
